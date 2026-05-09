@@ -100,6 +100,23 @@ class TransactionTest < ActiveSupport::TestCase
     assert transaction.extra["exchange_rate_invalid"]
   end
 
+  test "exchange_rate setter rejects non-finite input" do
+    transaction = Transaction.new
+    transaction.exchange_rate = "Infinity"
+
+    assert_equal "Infinity", transaction.extra["exchange_rate"]
+    assert transaction.extra["exchange_rate_invalid"]
+  end
+
+  test "exchange_rate setter clears invalid flag for valid input" do
+    transaction = Transaction.new
+    transaction.exchange_rate = "not a number"
+    transaction.exchange_rate = "1.5"
+
+    assert_equal 1.5, transaction.exchange_rate
+    assert_equal false, transaction.extra["exchange_rate_invalid"]
+  end
+
   test "exchange_rate validation rejects non-numeric input" do
     transaction = Transaction.new(
       category: categories(:income),

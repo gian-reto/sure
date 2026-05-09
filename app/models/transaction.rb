@@ -35,11 +35,13 @@ class Transaction < ApplicationRecord
 
   def exchange_rate=(value)
     if value.blank?
-      self.extra = (extra || {}).merge("exchange_rate" => nil)
+      self.extra = (extra || {}).merge("exchange_rate" => nil, "exchange_rate_invalid" => false)
     else
       begin
         normalized_value = Float(value)
-        self.extra = (extra || {}).merge("exchange_rate" => normalized_value)
+        raise ArgumentError unless normalized_value.finite?
+
+        self.extra = (extra || {}).merge("exchange_rate" => normalized_value, "exchange_rate_invalid" => false)
       rescue ArgumentError, TypeError
         # Store the raw value for validation error reporting
         self.extra = (extra || {}).merge("exchange_rate" => value, "exchange_rate_invalid" => true)
@@ -55,9 +57,8 @@ class Transaction < ApplicationRecord
       if extra&.dig("exchange_rate_invalid")
         errors.add(:exchange_rate, "must be a number")
       elsif exchange_rate.present?
-        # Convert to float for comparison
-        numeric_rate = exchange_rate.to_d rescue nil
-        if numeric_rate.nil? || numeric_rate <= 0
+        numeric_rate = Float(exchange_rate) rescue nil
+        if numeric_rate.nil? || !numeric_rate.finite? || numeric_rate <= 0
           errors.add(:exchange_rate, "must be greater than 0")
         end
       end

@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[7.2].define(version: 2026_05_12_210600) do
+ActiveRecord::Schema[7.2].define(version: 2026_05_12_211000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pgcrypto"
   enable_extension "plpgsql"
@@ -1638,6 +1638,8 @@ ActiveRecord::Schema[7.2].define(version: 2026_05_12_210600) do
     t.jsonb "locked_attributes", default: {}
     t.string "investment_activity_label"
     t.decimal "fee", precision: 19, scale: 4, default: "0.0", null: false
+    t.jsonb "extra", default: {}, null: false
+    t.index ["extra"], name: "index_trades_on_extra", using: :gin
     t.index ["investment_activity_label"], name: "index_trades_on_investment_activity_label"
     t.index ["security_id"], name: "index_trades_on_security_id"
   end
