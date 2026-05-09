@@ -48,13 +48,14 @@ class AccountsController < ApplicationController
     @chart_view = params[:chart_view] || "balance"
     @tab = params[:tab]
     @q = params.fetch(:q, {}).permit(:search, status: [])
-    entries = @account.entries.where(excluded: false).search(@q).reverse_chronological
+    entries = @account.entries.where(excluded: false).search(@q).reverse_chronological.includes(:entryable)
 
     @pagy, @entries = pagy(
       entries,
       limit: safe_per_page,
       params: request.query_parameters.except("tab").merge("tab" => "activity")
     )
+    Transaction::ActivitySecurityPreloader.new(@entries).preload
 
     @activity_feed_data = Account::ActivityFeedData.new(@account, @entries)
   end
