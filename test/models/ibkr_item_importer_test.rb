@@ -28,4 +28,15 @@ class IbkrItemImporterTest < ActiveSupport::TestCase
     assert_equal 2, primary_account.raw_activities_payload["trades"].size
     assert_equal 2, primary_account.raw_activities_payload["cash_transactions"].size
   end
+
+  test "raises parse error for malformed flex statement xml" do
+    provider = mock("ibkr_provider")
+    provider.expects(:download_statement).returns("<FlexQueryResponse><FlexStatement>")
+
+    error = assert_raises(IbkrItem::ReportParser::ParseError) do
+      IbkrItem::Importer.new(@ibkr_item, ibkr_provider: provider).import
+    end
+
+    assert_match "Invalid IBKR Flex XML", error.message
+  end
 end

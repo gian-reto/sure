@@ -23,4 +23,36 @@ class IbkrItemReportParserTest < ActiveSupport::TestCase
     assert_equal BigDecimal("250"), second_account[:current_balance]
     assert_equal 1, second_account[:equity_summary_in_base].size
   end
+
+  test "raises parse error for malformed xml" do
+    error = assert_raises(IbkrItem::ReportParser::ParseError) do
+      IbkrItem::ReportParser.new("<FlexQueryResponse><FlexStatement>").parse
+    end
+
+    assert_match "Invalid IBKR Flex XML", error.message
+  end
+
+  test "raises parse error when flex statements are missing" do
+    error = assert_raises(IbkrItem::ReportParser::ParseError) do
+      IbkrItem::ReportParser.new('<FlexQueryResponse queryName="Sure Test" />').parse
+    end
+
+    assert_equal "Invalid IBKR Flex XML: no FlexStatement nodes found.", error.message
+  end
+
+  test "raises parse error when flex statement account id is missing" do
+    xml = <<~XML
+      <FlexQueryResponse queryName="Sure Test">
+        <FlexStatement>
+          <AccountInformation currency="CHF" />
+        </FlexStatement>
+      </FlexQueryResponse>
+    XML
+
+    error = assert_raises(IbkrItem::ReportParser::ParseError) do
+      IbkrItem::ReportParser.new(xml).parse
+    end
+
+    assert_equal "Invalid IBKR Flex XML: missing account identifier in FlexStatement.", error.message
+  end
 end

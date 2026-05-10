@@ -1,6 +1,8 @@
 class IbkrItem::ReportParser
   include IbkrAccount::DataHelpers
 
+  class ParseError < StandardError; end
+
   POSITION_VALUE_CONTAINER_NAMES = %w[ChangeInPositionValues].freeze
   POSITION_VALUE_ROW_NAMES = %w[ChangeInPositionValue].freeze
   CASH_REPORT_CONTAINER_NAMES = %w[CashReport CashReports].freeze
@@ -15,10 +17,14 @@ class IbkrItem::ReportParser
   CASH_TRANSACTION_ROW_NAMES = %w[CashTransaction].freeze
 
   def initialize(xml_body)
-    @document = Nokogiri::XML(xml_body) { |config| config.noblanks }
+    @document = Nokogiri::XML(xml_body.to_s) { |config| config.strict.noblanks }
+  rescue Nokogiri::XML::SyntaxError => e
+    raise ParseError, "Invalid IBKR Flex XML: #{e.message}"
   end
 
   def parse
+    validate_document!
+
     {
       metadata: root_metadata,
       accounts: flex_statements.map { |statement| parse_statement(statement) }
@@ -26,6 +32,11 @@ class IbkrItem::ReportParser
   end
 
   private
+
+    def validate_document!
+      raise ParseError, "Invalid IBKR Flex XML: missing FlexQueryResponse root." unless @document.at_xpath("//FlexQueryResponse")
+      raise ParseError, "Invalid IBKR Flex XML: no FlexStatement nodes found." if flex_statements.empty?
+    end
 
     def flex_statements
       @document.xpath("//FlexStatement")
@@ -44,6 +55,9 @@ class IbkrItem::ReportParser
       open_positions = section_rows(statement, OPEN_POSITION_CONTAINER_NAMES, OPEN_POSITION_ROW_NAMES)
       trades = section_rows(statement, TRADES_CONTAINER_NAMES, TRADE_ROW_NAMES)
       cash_transactions = section_rows(statement, CASH_TRANSACTION_CONTAINER_NAMES, CASH_TRANSACTION_ROW_NAMES)
+      account_id = account_information["account_id"].presence || statement_data["account_id"]
+
+      raise ParseError, "Invalid IBKR Flex XML: missing account identifier in FlexStatement." if account_id.blank?
 
       currency = account_information["currency"].presence&.upcase || "USD"
       report_date = open_positions.filter_map { |row| parse_date(row["report_date"]) }.max ||
@@ -52,8 +66,8 @@ class IbkrItem::ReportParser
         Date.current
 
       {
-        ibkr_account_id: account_information["account_id"].presence || statement_data["account_id"],
-        name: account_information["account_id"].presence || statement_data["account_id"],
+        ibkr_account_id: account_id,
+        name: account_id,
         currency: currency,
         cash_balance: extract_cash_balance(cash_report, currency),
         current_balance: extract_total_balance(position_values, cash_report, currency),
