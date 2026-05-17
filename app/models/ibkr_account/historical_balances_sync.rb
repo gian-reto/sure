@@ -22,29 +22,72 @@ class IbkrAccount::HistoricalBalancesSync
       ibkr_account.current_account
     end
 
+    def account_currency
+      ibkr_account.currency.to_s.upcase
+    end
+
     def normalized_rows
-      @normalized_rows ||= Array(ibkr_account.raw_equity_summary_payload)
-        .filter_map do |row|
-          next unless row.is_a?(Hash)
+      @normalized_rows ||= begin
+        existing_balances = account.balances
+          .where(currency: account.currency)
+          .index_by(&:date)
 
-          data = row.with_indifferent_access
-          currency = data[:currency].presence&.upcase
-          account_currency = ibkr_account.currency.to_s.upcase
-          next if currency.present? && currency != account_currency
+        reported_rows = Array(ibkr_account.raw_equity_summary_payload)
+          .filter_map do |row|
+            next unless row.is_a?(Hash)
 
-          date = parse_date(data[:report_date])
-          total = parse_decimal(data[:total])
-          cash = parse_decimal(data[:cash]) || BigDecimal("0")
-          next unless date && total
+            data = row.with_indifferent_access
+            currency = data[:currency].presence&.upcase
+            next if currency.present? && currency != account_currency
+
+            date = parse_date(data[:report_date])
+            total = parse_decimal(data[:total])
+            next unless date && total
+
+            cash = cash_balance_for(date, existing_balances)
+
+            {
+              date: date,
+              total: total,
+              cash: cash,
+              non_cash: total - cash
+            }
+          end
+          .sort_by { |row| row[:date] }
+
+        fill_gaps(reported_rows, existing_balances)
+      end
+    end
+
+    def fill_gaps(rows, existing_balances)
+      return [] if rows.empty?
+
+      rows_by_date = rows.index_by { |row| row[:date] }
+      first_date = rows.first[:date]
+      last_date = [ rows.last[:date], account.current_anchor_date || Date.current ].max
+
+      last_total = nil
+      (first_date..last_date).filter_map do |date|
+        if rows_by_date[date]
+          last_total = rows_by_date[date][:total]
+          rows_by_date[date]
+        else
+          next unless last_total
+
+          cash = cash_balance_for(date, existing_balances)
 
           {
             date: date,
-            total: total,
+            total: last_total,
             cash: cash,
-            non_cash: total - cash
+            non_cash: last_total - cash
           }
         end
-        .sort_by { |row| row[:date] }
+      end
+    end
+
+    def cash_balance_for(date, existing_balances)
+      existing_balances[date]&.cash_balance || BigDecimal("0")
     end
 
     def balance_rows
